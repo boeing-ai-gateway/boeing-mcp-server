@@ -216,6 +216,30 @@ class ObotClient:
         response.raise_for_status()
         return response.json()
 
+    async def launch_user_mcp_server(self, server_id: str) -> Dict[str, Any]:
+        """
+        Launch a user MCP server to validate it starts up correctly.
+
+        Args:
+            server_id: The server ID
+
+        Returns:
+            Dictionary with success status and optional error message
+        """
+        try:
+            response = await self.client.post(
+                f"/api/mcp-servers/{server_id}/launch",
+                json={},
+                headers=self._get_auth_headers(),
+            )
+            response.raise_for_status()
+            return {"success": True}
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "message": f"Server failed to launch: {e.response.status_code} {e.response.text}",
+            }
+
     async def get_mcp_server_oauth_url(self, server_id: str) -> Optional[str]:
         """
         Get the OAuth URL for a user MCP server if authentication is required.

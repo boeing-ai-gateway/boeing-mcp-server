@@ -26,66 +26,6 @@ mcp = FastMCP("obot-mcp-server")
 obot_client = ObotClient()
 
 
-def _requires_url_configuration(manifest: Dict[str, Any]) -> bool:
-    """
-    Check if a remote server requires URL configuration from the user.
-
-    Remote servers need URL configuration when they have a hostname constraint
-    or URL template, but no fixed URL.
-
-    Args:
-        manifest: The server manifest
-
-    Returns:
-        True if URL configuration is required
-    """
-    if manifest.get("runtime") != "remote":
-        return False
-
-    remote_config = manifest.get("remoteConfig", {})
-    if not remote_config:
-        return False
-
-    # If there's a fixed URL, no user configuration is needed
-    if remote_config.get("fixedURL"):
-        return False
-
-    # If there's a hostname constraint or URL template, user must provide URL
-    return bool(remote_config.get("hostname") or remote_config.get("urlTemplate"))
-
-
-def _has_required_headers(manifest: Dict[str, Any]) -> bool:
-    """
-    Check if a remote server has required headers that need user input.
-
-    Headers with a static value are pre-filled and don't need user input.
-    Headers without a value that are marked required need user input.
-
-    Args:
-        manifest: The server manifest
-
-    Returns:
-        True if there are required headers needing user input
-    """
-    if manifest.get("runtime") != "remote":
-        return False
-
-    remote_config = manifest.get("remoteConfig", {})
-    if not remote_config:
-        return False
-
-    headers = remote_config.get("headers", [])
-    for header in headers:
-        # If header has a static value, it doesn't need user input
-        if header.get("value"):
-            continue
-        # If header is required and has no value, user must provide it
-        if header.get("required", False):
-            return True
-
-    return False
-
-
 def _extract_server_info(item: Dict[str, Any], item_type: str) -> Dict[str, Any]:
     """
     Extract common server information from API response.
@@ -111,19 +51,14 @@ def _extract_server_info(item: Dict[str, Any], item_type: str) -> Dict[str, Any]
 
     # Add type-specific fields
     if item_type == "catalog_entry":
-        # Check if configuration is needed based on:
-        # 1. Required environment variables
-        # 2. Remote servers needing URL configuration (hostname/urlTemplate without fixedURL)
-        # 3. Remote servers with required headers
-        env_vars = manifest.get("env", [])
-        has_required_env = any(env.get("required", False) for env in env_vars)
-        needs_url = _requires_url_configuration(manifest)
-        has_required_headers = _has_required_headers(manifest)
-
-        info["requires_configuration"] = (
-            has_required_env or needs_url or has_required_headers
+        requirements = _extract_configuration_requirements(manifest)
+        has_config = bool(
+            requirements["required_parameters"]
+            or requirements["optional_parameters"]
+            or requirements.get("url_configuration")
         )
-        info["needs_url"] = needs_url
+        info["requires_configuration"] = has_config
+        info["needs_url"] = requirements.get("url_configuration") is not None
     else:  # multi_user_server
         info["configured"] = item.get("configured", False)
         info["needs_url"] = item.get("needsURL", False)
@@ -329,171 +264,6 @@ async def obot_search_mcp_servers(
         - query: The search query used
     """
     return await search_mcp_servers_impl(query, runtime_filter, limit)
-
-
-async def get_mcp_server_connection_impl(
-    server_id: str, ctx: Context
-) -> Dict[str, Any]:
-    """
-    Implementation for getting MCP server connection information.
-
-    Args:
-        server_id: The server or catalog entry ID
-        ctx: FastMCP context for elicitation
-
-    Returns:
-        Dictionary with connection status and information:
-        - status: "available", "requires_configuration", "not_ready", or "not_found"
-        - connect_url: Connection URL (if available)
-        - configure_url: Configuration URL (if configuration needed)
-        - deployment_status: Deployment status (if not ready)
-        - message: Human-readable status message
-    """
-    # Try to get as catalog entry first
-    catalog_entry = await obot_client.get_catalog_entry(server_id)
-
-    if catalog_entry:
-        # Check if requires configuration based on:
-        # 1. Required environment variables
-        # 2. Remote servers needing URL configuration (hostname/urlTemplate without fixedURL)
-        # 3. Remote servers with required headers
-        manifest = catalog_entry.get("manifest", {})
-        env_vars = manifest.get("env", [])
-        has_required_env = any(env.get("required", False) for env in env_vars)
-        needs_url = _requires_url_configuration(manifest)
-        has_required_headers = _has_required_headers(manifest)
-
-        if has_required_env or needs_url or has_required_headers:
-            configure_url = f"{config.obot_server_url}/mcp-servers/c/{server_id}"
-            # Build a descriptive message based on what's needed
-            reasons = []
-            if has_required_env:
-                reasons.append("environment variables")
-            if needs_url:
-                reasons.append("server URL")
-            if has_required_headers:
-                reasons.append("authentication headers")
-            reason_str = ", ".join(reasons)
-            return {
-                "status": "requires_configuration",
-                "configure_url": configure_url,
-                "needs_url": needs_url,
-                "message": f"Server requires configuration ({reason_str}). Please visit {configure_url} to configure.",
-            }
-
-        # No configuration required
-        # For catalog entries, we need to create a user server first to check for OAuth
-        # Then check if OAuth is required
-        try:
-            # Check if user already has a server for this catalog entry
-            existing_server = await _find_existing_user_server(server_id)
-            if existing_server:
-                user_server_id = existing_server.get("id", "")
-            else:
-                # Create a user server instance
-                created = await obot_client.create_user_mcp_server(server_id)
-                user_server_id = created.get("id", "")
-
-            # Check for OAuth requirement
-            try:
-                oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
-                if oauth_url:
-                    name = manifest.get("name", "Unknown")
-                    oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, user_server_id)
-                    if not oauth_success:
-                        return {
-                            "status": "cancelled",
-                            "message": "OAuth authentication was cancelled by the user.",
-                        }
-            except (httpx.HTTPStatusError, httpx.TimeoutException):
-                pass
-
-            # Obot will automatically deploy the server when the user connects
-            # Connection URLs use the /mcp-connect/{id} format
-            connect_url = f"{config.obot_server_url}/mcp-connect/{user_server_id}"
-            return {
-                "status": "available",
-                "connect_url": connect_url,
-                "message": "Server is ready to connect.",
-            }
-        except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to prepare server for connection: {e}",
-            }
-
-    # Try to get as multi-user server
-    server = await obot_client.get_multi_user_server(server_id)
-
-    if server:
-        configured = server.get("configured", False)
-        needs_url = server.get("needsURL", False)
-
-        # Check if server is ready
-        if not configured or needs_url:
-            configure_url = f"{config.obot_server_url}/mcp-servers/s/{server_id}"
-            # Build message based on what's needed
-            if needs_url:
-                message = f"Server requires URL configuration. Please visit {configure_url} to update the server URL."
-            else:
-                message = f"Server requires configuration. Please visit {configure_url} to configure required settings."
-            return {
-                "status": "requires_configuration",
-                "configure_url": configure_url,
-                "needs_url": needs_url,
-                "message": message,
-            }
-
-        # Check for OAuth requirement
-        try:
-            oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
-            if oauth_url:
-                name = server.get("manifest", {}).get("name", "Unknown")
-                oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, server_id)
-                if not oauth_success:
-                    return {
-                        "status": "cancelled",
-                        "message": "OAuth authentication was cancelled by the user.",
-                    }
-        except (httpx.HTTPStatusError, httpx.TimeoutException):
-            pass
-
-        # Construct connect URL using the standard mcp-connect format
-        connect_url = f"{config.obot_server_url}/mcp-connect/{server_id}"
-        return {
-            "status": "available",
-            "connect_url": connect_url,
-            "message": "Server is ready to connect.",
-        }
-
-    # Server not found
-    return {
-        "status": "not_found",
-        "message": f"No server or catalog entry found with ID: {server_id}",
-    }
-
-
-@mcp.tool()
-async def obot_get_mcp_server_connection(
-    server_id: str, ctx: Context
-) -> Dict[str, Any]:
-    """
-    Get connection information for an MCP server.
-
-    If the server requires OAuth authentication, the user will be prompted
-    to visit an authentication URL in their browser before continuing.
-
-    Args:
-        server_id: The server or catalog entry ID
-
-    Returns:
-        Dictionary with connection status and information:
-        - status: "available", "requires_configuration", "cancelled", or "not_found"
-        - connect_url: Connection URL (if available)
-        - configure_url: Configuration URL (if configuration needed)
-        - message: Human-readable status message
-    """
-    return await get_mcp_server_connection_impl(server_id, ctx)
 
 
 def _extract_configuration_requirements(manifest: Dict[str, Any]) -> Dict[str, Any]:
@@ -775,44 +545,103 @@ async def _handle_oauth_elicitation(
 
 
 @mcp.tool()
-async def obot_configure_catalog_entry(
-    entry_id: str,
+async def obot_connect_to_mcp_server(
+    server_id: str,
     ctx: Context,
 ) -> Dict[str, Any]:
     """
-    Configure and connect to an MCP server from a catalog entry.
+    Connect to an MCP server by catalog entry ID or multi-user server ID.
 
-    Reads the catalog entry's configuration requirements, handles OAuth
-    authentication if needed, presents a form to the user to collect
-    necessary values (API keys, URLs, etc.), and creates/configures
-    the server -- all in a single tool call.
+    Handles the full connection flow end-to-end: configure, launch, OAuth,
+    and return a connect_url. For catalog entries, reads configuration
+    requirements, presents a form to collect necessary values (API keys,
+    URLs, etc.), creates/configures the server, and validates launch.
+    For multi-user servers, checks configuration status and handles OAuth.
 
     If the server requires OAuth authentication, the user will be
     prompted to visit an authentication URL in their browser before
-    continuing with configuration.
+    continuing.
 
     Args:
-        entry_id: The catalog entry ID to configure
+        server_id: The catalog entry ID or multi-user server ID
 
     Returns:
-        Dictionary with configuration status and connection information
+        Dictionary with connection status and information
     """
-    # 1. Fetch catalog entry
+    # --- Try catalog entry first ---
     try:
-        catalog_entry = await obot_client.get_catalog_entry(entry_id)
+        catalog_entry = await obot_client.get_catalog_entry(server_id)
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
         return {"status": "error", "message": f"Failed to fetch catalog entry: {e}"}
 
-    if not catalog_entry:
+    if catalog_entry:
+        return await _handle_catalog_entry_connection(server_id, catalog_entry, ctx)
+
+    # --- Fall back to multi-user server ---
+    try:
+        multi_user_server = await obot_client.get_multi_user_server(server_id)
+    except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
+        return {"status": "error", "message": f"Failed to fetch server: {e}"}
+
+    if multi_user_server:
+        return await _handle_multi_user_server_connection(server_id, multi_user_server, ctx)
+
+    # --- Not found ---
+    return {
+        "status": "not_found",
+        "message": f"No catalog entry or server found with ID: {server_id}",
+    }
+
+
+async def _handle_multi_user_server_connection(
+    server_id: str, server: Dict[str, Any], ctx: Context
+) -> Dict[str, Any]:
+    """Handle connection flow for a multi-user server."""
+    configured = server.get("configured", False)
+    needs_url = server.get("needsURL", False)
+    name = server.get("manifest", {}).get("name", "Unknown")
+
+    if not configured or needs_url:
+        configure_url = f"{config.obot_server_url}/mcp-servers/s/{server_id}"
+        if needs_url:
+            message = f"Server '{name}' requires URL configuration. Please visit {configure_url} to update the server URL."
+        else:
+            message = f"Server '{name}' requires configuration. Please visit {configure_url} to configure required settings."
         return {
-            "status": "not_found",
-            "message": f"No catalog entry found with ID: {entry_id}",
+            "status": "error",
+            "configure_url": configure_url,
+            "message": message,
         }
 
+    # Check for OAuth requirement
+    try:
+        oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+        if oauth_url:
+            oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, server_id)
+            if not oauth_success:
+                return {
+                    "status": "cancelled",
+                    "message": "OAuth authentication was cancelled by the user.",
+                }
+    except (httpx.HTTPStatusError, httpx.TimeoutException):
+        pass
+
+    connect_url = f"{config.obot_server_url}/mcp-connect/{server_id}"
+    return {
+        "status": "available",
+        "connect_url": connect_url,
+        "message": f"Server '{name}' is ready to connect.",
+    }
+
+
+async def _handle_catalog_entry_connection(
+    entry_id: str, catalog_entry: Dict[str, Any], ctx: Context
+) -> Dict[str, Any]:
+    """Handle connection flow for a catalog entry."""
     manifest = catalog_entry.get("manifest", {})
     name = manifest.get("name", "Unknown")
 
-    # 2. Reject composite servers
+    # 1. Reject composite servers
     if manifest.get("runtime") == "composite":
         return {
             "status": "error",
@@ -820,7 +649,7 @@ async def obot_configure_catalog_entry(
             "Please use the Obot web UI instead.",
         }
 
-    # 3. Check OAuth requirement
+    # 2. Check OAuth admin requirement
     remote_config = manifest.get("remoteConfig", {})
     if remote_config.get("staticOAuthRequired") and not catalog_entry.get(
         "oauthCredentialConfigured"
@@ -830,7 +659,7 @@ async def obot_configure_catalog_entry(
             "message": f"Server '{name}' requires OAuth configuration that must be set up by an administrator first.",
         }
 
-    # 4. Check for existing configured server
+    # 3. Check for existing configured server
     try:
         existing_server = await _find_existing_user_server(entry_id)
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
@@ -840,13 +669,13 @@ async def obot_configure_catalog_entry(
         }
 
     if existing_server and existing_server.get("configured"):
-        server_id = existing_server.get("id", "")
+        user_server_id = existing_server.get("id", "")
 
         # Check for OAuth requirement even for already configured servers
         try:
-            oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+            oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
-                oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, server_id)
+                oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, user_server_id)
                 if not oauth_success:
                     return {
                         "status": "cancelled",
@@ -860,16 +689,16 @@ async def obot_configure_catalog_entry(
 
         return {
             "status": "already_configured",
-            "server_id": server_id,
-            "connect_url": f"{config.obot_server_url}/mcp-connect/{server_id}",
+            "server_id": user_server_id,
+            "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
             "message": f"Server '{name}' is already configured and ready to connect.",
         }
 
-    # 5. Extract configuration requirements
+    # 4. Extract configuration requirements
     requirements = _extract_configuration_requirements(manifest)
     url_config = requirements.get("url_configuration")
 
-    # 6. If no configuration needed, create server directly
+    # 5. If no configuration needed, create server directly
     has_params = (
         requirements["required_parameters"] or requirements["optional_parameters"]
     )
@@ -878,15 +707,26 @@ async def obot_configure_catalog_entry(
     if not has_params and not needs_url:
         try:
             if existing_server:
-                server_id = existing_server.get("id", "")
+                user_server_id = existing_server.get("id", "")
             else:
                 created = await obot_client.create_user_mcp_server(entry_id)
-                server_id = created.get("id", "")
+                user_server_id = created.get("id", "")
+
+            # Launch validation
+            try:
+                launch_result = await obot_client.launch_user_mcp_server(user_server_id)
+                if not launch_result.get("success"):
+                    return {
+                        "status": "error",
+                        "message": f"Server failed to launch: {launch_result.get('message', 'unknown error')}",
+                    }
+            except Exception:
+                pass  # Launch endpoint may not exist yet
 
             # Check for OAuth requirement
-            oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+            oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
-                oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, server_id)
+                oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, user_server_id)
                 if not oauth_success:
                     return {
                         "status": "cancelled",
@@ -895,22 +735,22 @@ async def obot_configure_catalog_entry(
 
             return {
                 "status": "configured",
-                "server_id": server_id,
-                "connect_url": f"{config.obot_server_url}/mcp-connect/{server_id}",
+                "server_id": user_server_id,
+                "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
                 "message": f"Server '{name}' created and ready to connect.",
             }
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {"status": "error", "message": f"Failed to create server: {e}"}
 
-    # 7. Build elicitation model
+    # 6. Build elicitation model
     ConfigModel = _build_elicitation_model(requirements, url_config)
 
-    # 8. Elicit from user
+    # 7. Elicit from user
     result = await ctx.elicit(
         f"Please provide the configuration for {name}:", ConfigModel
     )
 
-    # 9. Handle elicitation result
+    # 8. Handle elicitation result
     if isinstance(result, (DeclinedElicitation, CancelledElicitation)):
         return {
             "status": "cancelled",
@@ -920,7 +760,7 @@ async def obot_configure_catalog_entry(
     # result is AcceptedElicitation
     elicited_data = result.data
 
-    # 10. Separate values into config dict and url
+    # 9. Separate values into config dict and url
     config_dict: Dict[str, str] = {}
     url_value: Optional[str] = None
 
@@ -949,42 +789,53 @@ async def obot_configure_catalog_entry(
                 "message": f"URL '{url_value}' does not match the required hostname pattern: {hostname_pattern}",
             }
 
-    # 11. Find or create server
+    # 10. Find or create server
     try:
         if existing_server:
-            server_id = existing_server.get("id", "")
+            user_server_id = existing_server.get("id", "")
         else:
             created = await obot_client.create_user_mcp_server(
                 entry_id, url=url_value if needs_url else None
             )
-            server_id = created.get("id", "")
+            user_server_id = created.get("id", "")
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
         return {"status": "error", "message": f"Failed to create server: {e}"}
 
     # Check and handle OAuth requirement
-    oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+    oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
     if oauth_url:
-        oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, server_id)
+        oauth_success = await _handle_oauth_elicitation(ctx, name, oauth_url, user_server_id)
         if not oauth_success:
             return {
                 "status": "cancelled",
                 "message": "OAuth authentication was cancelled by the user.",
             }
 
-    # 12. Configure server with collected values
+    # 11. Configure server with collected values
     if config_dict:
         try:
-            await obot_client.configure_user_mcp_server(server_id, config_dict)
+            await obot_client.configure_user_mcp_server(user_server_id, config_dict)
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {
                 "status": "error",
                 "message": f"Failed to configure server: {e}",
             }
 
+    # 12. Launch validation
+    try:
+        launch_result = await obot_client.launch_user_mcp_server(user_server_id)
+        if not launch_result.get("success"):
+            return {
+                "status": "error",
+                "message": f"Server failed to launch: {launch_result.get('message', 'unknown error')}",
+            }
+    except Exception:
+        pass  # Launch endpoint may not exist yet
+
     # 13. Update URL if needed for existing server
     if url_value and existing_server:
         try:
-            await obot_client.update_user_mcp_server_url(server_id, url_value)
+            await obot_client.update_user_mcp_server_url(user_server_id, url_value)
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {
                 "status": "error",
@@ -994,7 +845,7 @@ async def obot_configure_catalog_entry(
     # 14. Return success
     return {
         "status": "configured",
-        "server_id": server_id,
-        "connect_url": f"{config.obot_server_url}/mcp-connect/{server_id}",
+        "server_id": user_server_id,
+        "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
         "message": f"Server '{name}' has been configured and is ready to connect.",
     }
