@@ -12,7 +12,7 @@ A FastMCP server that provides tools for discovering, searching, and connecting 
 # Install dependencies
 uv sync
 
-# Start the MCP server
+# Start the MCP server (requires OBOT_URL env var)
 uv run python main.py
 
 # Run unit tests
@@ -20,46 +20,44 @@ uv run pytest test_server.py -v
 
 # Run a single test
 uv run pytest test_server.py::TestClassName::test_method -v
-
-# Run integration tests
-uv run python integration_test.py
-
-# Inspect server configuration and registered tools
-uv run python inspect_server.py
 ```
 
 ## Architecture
 
-```
-main.py                     # Entry point - imports and runs the FastMCP server
-obot_mcp/
-├── __init__.py             # Exports the mcp server instance
-├── server.py               # FastMCP server with 3 MCP tools
-├── client.py               # ObotClient - async HTTP client for Obot API
-└── config.py               # Configuration from environment variables
-```
+- **`main.py`** - Entry point. Adds a `/healthz` health check route, then runs the FastMCP server on `0.0.0.0:8080` at path `/mcp` using streamable-http transport.
+- **`obot_mcp/server.py`** - FastMCP server exposing 3 MCP tools (all prefixed `obot_`):
+  - `obot_list_mcp_servers` - Lists available MCP servers with optional runtime filtering
+  - `obot_search_mcp_servers` - Search servers by keyword (name/description), results ranked by match priority (title > short description > description)
+  - `obot_connect_to_mcp_server` - Full connection flow: resolves ID as catalog entry or multi-user server, elicits configuration from user if needed, handles OAuth via URL-mode elicitation with polling, creates/launches the server, returns a `connect_url`
+- **`obot_mcp/client.py`** - `ObotClient` async HTTP client using `httpx.AsyncClient`. Auth is forwarded from the incoming request's `Authorization` header (via `fastmcp.server.dependencies.get_http_request`), not from env vars.
+- **`obot_mcp/config.py`** - Reads `OBOT_URL` env var (default: `http://localhost:8080`)
 
-### Key Components
+### Two Server Types
 
-- **Config** (`config.py`): Reads `OBOT_SERVER_URL` and `OBOT_TOKEN` from environment variables
-- **ObotClient** (`client.py`): Async HTTP client using `httpx.AsyncClient` with Bearer token auth
-- **MCP Server** (`server.py`): FastMCP server exposing 3 tools:
-  - `list_mcp_servers` - Lists available MCP servers with optional runtime filtering
-  - `search_mcp_servers` - Search servers by keyword (name/description)
-  - `get_mcp_server_connection` - Get connection info for a specific server
+The Obot API exposes two kinds of MCP servers:
+- **Catalog entries** (`/api/all-mcps/entries`) - Templates that can be instantiated into user servers. May require configuration (env vars, headers, URLs) and/or OAuth.
+- **Multi-user servers** (`/api/all-mcps/servers`) - Already-deployed shared servers. May need URL configuration or OAuth but not env var setup.
 
-### Data Flow
+### Connection Flow (`obot_connect_to_mcp_server`)
 
-1. Claude/AI calls an MCP tool
-2. Tool function calls `ObotClient` methods to query Obot API
-3. API responses are normalized via `_extract_server_info()`
-4. Filtered/searched results returned to caller
+This is the most complex tool. It tries catalog entry first, falls back to multi-user server:
+1. Fetches the catalog entry by ID (falls back to multi-user server if not found)
+2. For catalog entries: rejects composite runtime, checks OAuth admin prereqs, looks for existing user server
+3. Extracts configuration requirements from manifest (env vars, remote headers, URL templates/hostname constraints)
+4. If config needed: builds a dynamic Pydantic model via `_build_elicitation_model()` and uses `ctx.elicit()` to collect values
+5. Creates/configures the user server, validates launch, handles OAuth if needed
+6. Returns `connect_url` in format `{OBOT_URL}/mcp-connect/{server_id}`
+
+For multi-user servers: checks configured status, handles OAuth, returns connect_url directly.
+
+### OAuth Flow
+
+OAuth uses MCP URL-mode elicitation (`ElicitRequestURLParams`) with Nanobot-specific `_meta` keys (`ai.nanobot.meta/oauth-url`, `ai.nanobot.meta/server-name`). After user accepts, polls `get_mcp_server_oauth_url()` until it returns empty (token stored).
 
 ## Environment Variables
 
-- `OBOT_SERVER_URL` - Obot API base URL (default: `http://localhost:8080`)
-- `OBOT_TOKEN` - Bearer token for Obot API authentication
+- `OBOT_URL` - Obot API base URL (default: `http://localhost:8080`)
 
 ## Testing
 
-Unit tests use `pytest-asyncio` with `unittest.mock` for mocking async HTTP calls. Tests are organized by function: `TestExtractServerInfo`, `TestFilterByRuntime`, `TestSearchItems`, `TestListMcpServers`, `TestSearchMcpServers`, `TestGetMcpServerConnection`.
+Tests are in `test_server.py`. Uses `pytest-asyncio` with `unittest.mock`. The `@mcp.tool()` decorator wraps functions into `FunctionTool` objects - access the underlying async function via `.fn` for direct testing (see `obot_connect_to_mcp_server_tool.fn` pattern in tests). Tests mock `obot_client` methods with `patch.object` and `AsyncMock`.
