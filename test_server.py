@@ -9,6 +9,7 @@ from mcp.types import ElicitResult
 
 from obot_mcp.server import (
     _extract_configuration_requirements,
+    _search_items,
     _validate_hostname,
     _build_elicitation_model,
     _find_existing_user_server,
@@ -308,6 +309,108 @@ class TestBuildElicitationModel:
         assert "API_KEY" in Model.model_fields
         assert "REGION" in Model.model_fields
         assert "url" in Model.model_fields
+
+
+# --- Test _search_items ---
+
+
+class TestSearchItems:
+    def _make_item(self, name="", short_description="", description=""):
+        return {
+            "manifest": {
+                "name": name,
+                "shortDescription": short_description,
+                "description": description,
+            }
+        }
+
+    def test_matches_name(self):
+        items = [self._make_item(name="GitHub Server")]
+        results = _search_items(items, "github")
+        assert len(results) == 1
+
+    def test_matches_short_description(self):
+        items = [self._make_item(name="Server", short_description="Access GitHub repos")]
+        results = _search_items(items, "github")
+        assert len(results) == 1
+
+    def test_matches_description(self):
+        items = [
+            self._make_item(
+                name="Server",
+                short_description="A code tool",
+                description="Integrates with GitHub repositories",
+            )
+        ]
+        results = _search_items(items, "github")
+        assert len(results) == 1
+
+    def test_no_match(self):
+        items = [
+            self._make_item(
+                name="Server",
+                short_description="A tool",
+                description="Does stuff",
+            )
+        ]
+        results = _search_items(items, "github")
+        assert len(results) == 0
+
+    def test_ordering_title_before_short_desc(self):
+        """Title matches should come before short description matches."""
+        items = [
+            self._make_item(name="Server", short_description="GitHub integration"),
+            self._make_item(name="GitHub Server", short_description="A tool"),
+        ]
+        results = _search_items(items, "github")
+        assert len(results) == 2
+        assert results[0]["manifest"]["name"] == "GitHub Server"
+        assert results[1]["manifest"]["shortDescription"] == "GitHub integration"
+
+    def test_ordering_short_desc_before_desc(self):
+        """Short description matches should come before description matches."""
+        items = [
+            self._make_item(name="A", short_description="x", description="GitHub tool"),
+            self._make_item(name="B", short_description="GitHub access", description="y"),
+        ]
+        results = _search_items(items, "github")
+        assert len(results) == 2
+        assert results[0]["manifest"]["name"] == "B"
+        assert results[1]["manifest"]["name"] == "A"
+
+    def test_ordering_all_three_tiers(self):
+        """Results should be ordered: title > short description > description."""
+        desc_item = self._make_item(name="C", short_description="x", description="GitHub docs")
+        short_desc_item = self._make_item(name="B", short_description="GitHub API", description="y")
+        title_item = self._make_item(name="GitHub Server", short_description="x", description="y")
+        items = [desc_item, short_desc_item, title_item]
+        results = _search_items(items, "github")
+        assert len(results) == 3
+        assert results[0]["manifest"]["name"] == "GitHub Server"
+        assert results[1]["manifest"]["name"] == "B"
+        assert results[2]["manifest"]["name"] == "C"
+
+    def test_no_duplicates_when_matching_multiple_fields(self):
+        """An item matching in name should not also appear in description results."""
+        items = [
+            self._make_item(
+                name="GitHub Server",
+                short_description="GitHub integration",
+                description="GitHub repos",
+            )
+        ]
+        results = _search_items(items, "github")
+        assert len(results) == 1
+
+    def test_case_insensitive(self):
+        items = [self._make_item(description="Integrates with GITHUB")]
+        results = _search_items(items, "github")
+        assert len(results) == 1
+
+    def test_empty_query(self):
+        items = [self._make_item(name="Server")]
+        results = _search_items(items, "")
+        assert len(results) == 1
 
 
 # --- Test _find_existing_user_server ---

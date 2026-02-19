@@ -99,27 +99,39 @@ def _filter_by_runtime(
 
 def _search_items(items: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
     """
-    Search items by query string in name and description.
+    Search items by query string in name, short description, and description.
+
+    Results are ordered by match priority:
+    1. Title (name) matches
+    2. Short description matches
+    3. Description matches
 
     Args:
         items: List of items to search
         query: Search term
 
     Returns:
-        Filtered list of items matching query
+        Filtered list of items matching query, ordered by match priority
     """
     query_lower = query.lower()
-    results = []
+    title_matches = []
+    short_desc_matches = []
+    desc_matches = []
 
     for item in items:
         manifest = item.get("manifest", {})
         name = manifest.get("name", "").lower()
-        description = manifest.get("shortDescription", "").lower()
+        short_description = manifest.get("shortDescription", "").lower()
+        description = manifest.get("description", "").lower()
 
-        if query_lower in name or query_lower in description:
-            results.append(item)
+        if query_lower in name:
+            title_matches.append(item)
+        elif query_lower in short_description:
+            short_desc_matches.append(item)
+        elif query_lower in description:
+            desc_matches.append(item)
 
-    return results
+    return title_matches + short_desc_matches + desc_matches
 
 
 async def list_mcp_servers_impl(
