@@ -521,9 +521,7 @@ async def _handle_oauth_elicitation(
         True if OAuth completed (user accepted), False if cancelled/declined
     """
     message = (
-        f"The MCP server '{name}' requires authentication with an external service.\n\n"
-        f"Please visit the URL below to authenticate, "
-        f"then return here and accept to continue."
+        f"The MCP server '{name}' requires authentication with an external service."
     )
 
     # Build the URL mode elicitation params with _meta containing the OAuth URL.
