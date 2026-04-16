@@ -11,8 +11,11 @@ from fastmcp import Context, FastMCP
 from fastmcp.server.elicitation import (
     CancelledElicitation,
     DeclinedElicitation,
+    handle_elicit_accept,
+    parse_elicit_response_type,
 )
 from mcp import types as mcp_types
+from mcp.shared.message import ServerMessageMetadata
 from pydantic import Field, create_model
 
 from .client import ObotClient
@@ -632,6 +635,38 @@ def _build_elicitation_model(
     return create_model("ConfigurationForm", **fields)
 
 
+async def _handle_configuration_form_elicitation(
+    ctx: Context,
+    message: str,
+    response_type: Any,
+    name: str,
+    server_icon: Optional[str] = None,
+) -> Any:
+    elicit_config = parse_elicit_response_type(response_type)
+    params = mcp_types.ElicitRequestFormParams(
+        message=message,
+        requestedSchema=elicit_config.schema,
+    )
+    meta: Dict[str, Any] = {"ai.nanobot.meta/server-name": name}
+    if server_icon:
+        meta["ai.nanobot.meta/server-icon"] = server_icon
+    params.meta = mcp_types.RequestParams.Meta(**meta)
+
+    result = await ctx.session.send_request(
+        mcp_types.ServerRequest(mcp_types.ElicitRequest(params=params)),
+        mcp_types.ElicitResult,
+        metadata=ServerMessageMetadata(related_request_id=ctx.request_id),
+    )
+
+    if result.action == "accept":
+        return handle_elicit_accept(elicit_config, result.content)
+    if result.action == "decline":
+        return DeclinedElicitation()
+    if result.action == "cancel":
+        return CancelledElicitation()
+    raise ValueError(f"Unexpected elicitation action: {result.action}")
+
+
 async def _handle_oauth_elicitation(
     ctx: Context,
     name: str,
@@ -913,8 +948,12 @@ async def _handle_catalog_entry_connection(
     ConfigModel = _build_elicitation_model(requirements, url_config)
 
     # 7. Elicit from user
-    result = await ctx.elicit(
-        f"Please provide the configuration for {name}:", ConfigModel
+    result = await _handle_configuration_form_elicitation(
+        ctx,
+        f"Please provide the configuration for {name}:",
+        ConfigModel,
+        name,
+        icon,
     )
 
     # 8. Handle elicitation result
