@@ -633,7 +633,11 @@ def _build_elicitation_model(
 
 
 async def _handle_oauth_elicitation(
-    ctx: Context, name: str, oauth_url: str, server_id: str
+    ctx: Context,
+    name: str,
+    oauth_url: str,
+    server_id: str,
+    server_icon: Optional[str] = None,
 ) -> bool:
     """
     Present OAuth elicitation to user and wait for token storage.
@@ -648,6 +652,7 @@ async def _handle_oauth_elicitation(
         name: Server name for display
         oauth_url: OAuth authorization URL
         server_id: The MCP server ID, used to poll for token completion
+        server_icon: Optional icon URL from the server manifest (for UI display)
 
     Returns:
         True if OAuth completed (user accepted), False if cancelled/declined
@@ -666,12 +671,13 @@ async def _handle_oauth_elicitation(
         url=oauth_url,
         elicitationId=str(uuid.uuid4()),
     )
-    params.meta = mcp_types.RequestParams.Meta(
-        **{
-            "ai.nanobot.meta/oauth-url": oauth_url,
-            "ai.nanobot.meta/server-name": name,
-        }
-    )
+    meta: Dict[str, Any] = {
+        "ai.nanobot.meta/oauth-url": oauth_url,
+        "ai.nanobot.meta/server-name": name,
+    }
+    if server_icon:
+        meta["ai.nanobot.meta/server-icon"] = server_icon
+    params.meta = mcp_types.RequestParams.Meta(**meta)
 
     result = await ctx.session.send_request(
         mcp_types.ServerRequest(
@@ -788,6 +794,7 @@ async def _handle_catalog_entry_connection(
     """Handle connection flow for a catalog entry."""
     manifest = catalog_entry.get("manifest", {})
     name = manifest.get("name", "Unknown")
+    icon = manifest.get("icon", None)
 
     # 1. Reject composite servers
     if manifest.get("runtime") == "composite":
@@ -824,7 +831,11 @@ async def _handle_catalog_entry_connection(
             oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
                 oauth_success = await _handle_oauth_elicitation(
-                    ctx, name, oauth_url, user_server_id
+                    ctx,
+                    name,
+                    oauth_url,
+                    user_server_id,
+                    icon,
                 )
                 if not oauth_success:
                     return {
@@ -877,7 +888,11 @@ async def _handle_catalog_entry_connection(
             oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
                 oauth_success = await _handle_oauth_elicitation(
-                    ctx, name, oauth_url, user_server_id
+                    ctx,
+                    name,
+                    oauth_url,
+                    user_server_id,
+                    icon,
                 )
                 if not oauth_success:
                     return {
@@ -967,7 +982,11 @@ async def _handle_catalog_entry_connection(
     oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
     if oauth_url:
         oauth_success = await _handle_oauth_elicitation(
-            ctx, name, oauth_url, user_server_id
+            ctx,
+            name,
+            oauth_url,
+            user_server_id,
+            icon,
         )
         if not oauth_success:
             return {
