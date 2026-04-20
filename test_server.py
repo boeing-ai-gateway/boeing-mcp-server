@@ -735,14 +735,38 @@ class TestListConnectedMcpServers:
 
 
 def _make_ctx(elicit_result=None, elicit_url_result=None):
-    """Create a mock Context for testing."""
-    ctx = AsyncMock(spec=["elicit", "session", "request_id"])
-    if elicit_result is not None:
-        ctx.elicit = AsyncMock(return_value=elicit_result)
-    if elicit_url_result is not None:
-        ctx.session = AsyncMock()
-        ctx.session.send_request = AsyncMock(return_value=elicit_url_result)
+    ctx = AsyncMock(spec=["session", "request_id"])
     ctx.request_id = "test-request-id"
+
+    send_returns: list[ElicitResult] = []
+
+    if elicit_result is not None:
+        if isinstance(elicit_result, AcceptedElicitation):
+            data = elicit_result.data
+            if hasattr(data, "model_dump"):
+                content = data.model_dump()
+            elif isinstance(data, dict):
+                content = data
+            else:
+                content = dict(data)
+            send_returns.append(ElicitResult(action="accept", content=content))
+        elif isinstance(elicit_result, DeclinedElicitation):
+            send_returns.append(ElicitResult(action="decline"))
+        elif isinstance(elicit_result, CancelledElicitation):
+            send_returns.append(ElicitResult(action="cancel"))
+        else:
+            raise ValueError(f"Unsupported elicit_result type: {type(elicit_result)}")
+
+    if elicit_url_result is not None:
+        send_returns.append(elicit_url_result)
+
+    if send_returns:
+        ctx.session = AsyncMock()
+        if len(send_returns) == 1:
+            ctx.session.send_request = AsyncMock(return_value=send_returns[0])
+        else:
+            ctx.session.send_request = AsyncMock(side_effect=send_returns)
+
     return ctx
 
 
@@ -2044,7 +2068,7 @@ class TestOAuthConfigurationFlow:
         created = {"id": "oauth-2"}
         oauth_url = "https://oauth.example.com/authorize"
 
-        # Config elicitation goes through ctx.elicit, OAuth goes through ctx.session.send_request
+        # Config form + OAuth URL both use ctx.session.send_request
         ctx = _make_ctx(
             elicit_result=AcceptedElicitation(data={"API_KEY": "my-secret-key"}),
             elicit_url_result=ElicitResult(action="accept"),
@@ -2094,8 +2118,7 @@ class TestOAuthConfigurationFlow:
         assert result["status"] == "configured"
         assert result["server_id"] == "oauth-2"
         # Verify both elicitations happened (config form + OAuth URL)
-        ctx.elicit.assert_called_once()
-        ctx.session.send_request.assert_called_once()
+        assert ctx.session.send_request.call_count == 2
         mock_configure.assert_called_once_with("oauth-2", {"API_KEY": "my-secret-key"})
 
 
