@@ -10,7 +10,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy application code and install the project
 COPY main.py ./
-COPY obot_mcp/ ./obot_mcp/
+COPY boeing_mcp/ ./boeing_mcp/
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim
@@ -20,7 +20,7 @@ WORKDIR /app
 # Copy the virtual environment from the builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/main.py /app/main.py
-COPY --from=builder /app/obot_mcp /app/obot_mcp
+COPY --from=builder /app/boeing_mcp /app/boeing_mcp
 
 ENV PATH="/app/.venv/bin:$PATH"
 

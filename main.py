@@ -1,10 +1,10 @@
-"""Entry point for the Obot MCP server."""
+"""Entry point for the Boeing MCP server."""
 
 from os import getenv
 
 from starlette.responses import JSONResponse
 
-from obot_mcp import mcp
+from boeing_mcp import mcp
 
 
 # Add health check endpoint

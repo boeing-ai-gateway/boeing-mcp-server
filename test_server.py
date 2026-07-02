@@ -1,4 +1,4 @@
-"""Tests for obot_connect_to_mcp_server tool and related functions."""
+"""Tests for boeing_connect_to_mcp_server tool and related functions."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,8 +11,8 @@ from fastmcp.server.elicitation import (
 )
 from mcp.types import ElicitResult
 
-from obot_mcp.client import ObotClient
-from obot_mcp.server import (
+from boeing_mcp.client import BoeingClient
+from boeing_mcp.server import (
     _build_elicitation_model,
     _extract_configuration_requirements,
     _find_existing_user_server,
@@ -20,18 +20,18 @@ from obot_mcp.server import (
     _validate_hostname,
     list_connected_mcp_servers_impl,
     list_mcp_servers_impl,
-    obot_client,
+    boeing_client,
 )
-from obot_mcp.server import (
+from boeing_mcp.server import (
     mcp as server_mcp,
 )
-from obot_mcp.server import (
-    obot_connect_to_mcp_server as obot_connect_to_mcp_server_tool,
+from boeing_mcp.server import (
+    boeing_connect_to_mcp_server as boeing_connect_to_mcp_server_tool,
 )
 
 # The @mcp.tool() decorator wraps the function into a FunctionTool object.
 # Access the underlying async function via .fn for direct testing.
-obot_connect_to_mcp_server = obot_connect_to_mcp_server_tool.fn
+boeing_connect_to_mcp_server = boeing_connect_to_mcp_server_tool.fn
 
 
 # --- Test _extract_configuration_requirements ---
@@ -490,7 +490,7 @@ class TestFindExistingUserServer:
             {"id": "s2", "catalogEntryID": "entry-2", "configured": False},
         ]
         with patch.object(
-            obot_client,
+            boeing_client,
             "list_user_mcp_servers",
             new_callable=AsyncMock,
             return_value=mock_servers,
@@ -505,7 +505,7 @@ class TestFindExistingUserServer:
             {"id": "s1", "catalogEntryID": "entry-1"},
         ]
         with patch.object(
-            obot_client,
+            boeing_client,
             "list_user_mcp_servers",
             new_callable=AsyncMock,
             return_value=mock_servers,
@@ -516,7 +516,7 @@ class TestFindExistingUserServer:
     @pytest.mark.asyncio
     async def test_empty_list(self):
         with patch.object(
-            obot_client,
+            boeing_client,
             "list_user_mcp_servers",
             new_callable=AsyncMock,
             return_value=[],
@@ -578,13 +578,13 @@ class TestListMcpServers:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entries",
                 new_callable=AsyncMock,
                 return_value=raw_entries,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_servers",
                 new_callable=AsyncMock,
                 return_value=raw_multi_user_servers,
@@ -678,25 +678,25 @@ class TestListConnectedMcpServers:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entries",
                 new_callable=AsyncMock,
                 return_value=raw_entries,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_servers",
                 new_callable=AsyncMock,
                 return_value=raw_multi_user_servers,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=raw_user_servers,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=raw_user_server_instances,
@@ -731,7 +731,7 @@ class TestListConnectedMcpServers:
         )
 
 
-# --- Test obot_connect_to_mcp_server ---
+# --- Test boeing_connect_to_mcp_server ---
 
 
 def _make_ctx(elicit_result=None, elicit_url_result=None):
@@ -779,19 +779,19 @@ class TestConnectToMcpServer:
         ctx = _make_ctx()
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="missing", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="missing", ctx=ctx)
         assert result["status"] == "not_found"
 
     @pytest.mark.asyncio
@@ -799,9 +799,9 @@ class TestConnectToMcpServer:
         ctx = _make_ctx()
         entry = {"manifest": {"name": "Composite", "runtime": "composite"}}
         with patch.object(
-            obot_client, "get_catalog_entry", new_callable=AsyncMock, return_value=entry
+            boeing_client, "get_catalog_entry", new_callable=AsyncMock, return_value=entry
         ):
-            result = await obot_connect_to_mcp_server(server_id="comp-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="comp-1", ctx=ctx)
         assert result["status"] == "error"
         assert "Composite" in result["message"]
 
@@ -819,9 +819,9 @@ class TestConnectToMcpServer:
             }
         }
         with patch.object(
-            obot_client, "get_catalog_entry", new_callable=AsyncMock, return_value=entry
+            boeing_client, "get_catalog_entry", new_callable=AsyncMock, return_value=entry
         ):
-            result = await obot_connect_to_mcp_server(server_id="oauth-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="oauth-1", ctx=ctx)
         assert result["status"] == "error"
         assert "OAuth" in result["message"]
 
@@ -832,25 +832,25 @@ class TestConnectToMcpServer:
         existing = {"id": "s1", "catalogEntryID": "entry-1", "configured": True}
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[existing],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
         assert result["status"] == "already_configured"
         assert result["server_id"] == "s1"
 
@@ -866,26 +866,26 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[existing],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 side_effect=[oauth_url, None],
             ),
-            patch("obot_mcp.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("boeing_mcp.server.asyncio.sleep", new_callable=AsyncMock),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "already_configured"
         assert result["server_id"] == "s1"
@@ -904,25 +904,25 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[existing],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=oauth_url,
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "cancelled"
         assert "OAuth authentication was cancelled" in result["message"]
@@ -934,37 +934,37 @@ class TestConnectToMcpServer:
         created = {"id": "new-1"}
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
         assert result["status"] == "configured"
         assert result["server_id"] == "new-1"
 
@@ -991,43 +991,43 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={},
             ) as mock_configure,
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "new-2"
@@ -1047,19 +1047,19 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
         assert result["status"] == "cancelled"
 
     @pytest.mark.asyncio
@@ -1076,19 +1076,19 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
         assert result["status"] == "cancelled"
 
     @pytest.mark.asyncio
@@ -1108,37 +1108,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ) as mock_create,
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         mock_create.assert_called_once_with("entry-1", url="https://my.example.com/api")
@@ -1159,19 +1159,19 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "error"
         assert "does not match" in result["message"]
@@ -1194,25 +1194,25 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 side_effect=error,
             ),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="entry-1", ctx=_make_ctx()
             )
         assert result["status"] == "error"
@@ -1222,9 +1222,9 @@ class TestConnectToMcpServer:
     async def test_timeout_on_fetch(self):
         error = httpx.TimeoutException("Connection timed out")
         with patch.object(
-            obot_client, "get_catalog_entry", new_callable=AsyncMock, side_effect=error
+            boeing_client, "get_catalog_entry", new_callable=AsyncMock, side_effect=error
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="entry-1", ctx=_make_ctx()
             )
         assert result["status"] == "error"
@@ -1250,40 +1250,40 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[existing],
             ),
             patch.object(
-                obot_client, "create_user_mcp_server", new_callable=AsyncMock
+                boeing_client, "create_user_mcp_server", new_callable=AsyncMock
             ) as mock_create,
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "existing-1"
@@ -1310,37 +1310,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[existing],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "update_user_mcp_server_url",
                 new_callable=AsyncMock,
                 return_value={},
             ) as mock_update_url,
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         mock_update_url.assert_called_once_with(
@@ -1365,25 +1365,25 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=multi_user_server,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=[
@@ -1391,7 +1391,7 @@ class TestConnectToMcpServer:
                 ],
             ),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="multi-server-1", ctx=ctx
             )
 
@@ -1418,38 +1418,38 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=multi_user_server,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 side_effect=[oauth_url, None],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "connect_to_multi_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"id": "msi-2"},
             ),
-            patch("obot_mcp.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("boeing_mcp.server.asyncio.sleep", new_callable=AsyncMock),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="multi-server-2", ctx=ctx
             )
 
@@ -1486,43 +1486,43 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=multi_user_server,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "connect_to_multi_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"id": "msi1-2-ms1zxpgl"},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_mcp_server_instance",
                 new_callable=AsyncMock,
                 return_value={},
             ) as mock_configure,
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="multi-server-3", ctx=ctx
             )
 
@@ -1546,37 +1546,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=multi_user_server,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "connect_to_multi_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"id": "msi-4"},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="multi-server-4", ctx=ctx
             )
 
@@ -1603,37 +1603,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_multi_user_server",
                 new_callable=AsyncMock,
                 return_value=multi_user_server,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=oauth_url,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_server_instances",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "connect_to_multi_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"id": "msi-5"},
             ),
         ):
-            result = await obot_connect_to_mcp_server(
+            result = await boeing_connect_to_mcp_server(
                 server_id="multi-server-5", ctx=ctx
             )
 
@@ -1651,25 +1651,25 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={
@@ -1678,7 +1678,7 @@ class TestConnectToMcpServer:
                 },
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "error"
         assert "failed to launch" in result["message"]
@@ -1692,37 +1692,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "new-launch-ok"
@@ -1747,37 +1747,37 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={
@@ -1786,7 +1786,7 @@ class TestConnectToMcpServer:
                 },
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "error"
         assert "failed to launch" in result["message"]
@@ -1810,56 +1810,56 @@ class TestConnectToMcpServer:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={},
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "new-config-launch-ok"
         assert "connect_url" in result
 
 
-# --- Test ObotClient methods ---
+# --- Test BoeingClient methods ---
 
 
-class TestObotClientNewMethods:
+class TestBoeingClientNewMethods:
     def _make_client_with_mock(self):
-        """Create an ObotClient with a mocked _client."""
-        client = ObotClient(base_url="http://test")
+        """Create an BoeingClient with a mocked _client."""
+        client = BoeingClient(base_url="http://test")
         mock_http = MagicMock()
         client._client = mock_http
         return client, mock_http
@@ -2074,38 +2074,38 @@ class TestOAuthConfigurationFlow:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 side_effect=[oauth_url, None],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
-            patch("obot_mcp.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("boeing_mcp.server.asyncio.sleep", new_callable=AsyncMock),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "oauth-1"
@@ -2124,37 +2124,37 @@ class TestOAuthConfigurationFlow:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 return_value=oauth_url,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "cancelled"
         assert "OAuth authentication was cancelled" in result["message"]
@@ -2180,44 +2180,44 @@ class TestOAuthConfigurationFlow:
 
         with (
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_catalog_entry",
                 new_callable=AsyncMock,
                 return_value=entry,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "list_user_mcp_servers",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "create_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value=created,
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "get_mcp_server_oauth_url",
                 new_callable=AsyncMock,
                 side_effect=[oauth_url, None],
             ),
             patch.object(
-                obot_client,
+                boeing_client,
                 "configure_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={},
             ) as mock_configure,
             patch.object(
-                obot_client,
+                boeing_client,
                 "launch_user_mcp_server",
                 new_callable=AsyncMock,
                 return_value={"success": True},
             ),
-            patch("obot_mcp.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("boeing_mcp.server.asyncio.sleep", new_callable=AsyncMock),
         ):
-            result = await obot_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
+            result = await boeing_connect_to_mcp_server(server_id="entry-1", ctx=ctx)
 
         assert result["status"] == "configured"
         assert result["server_id"] == "oauth-2"

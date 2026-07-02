@@ -1,4 +1,4 @@
-"""FastMCP server with tools for Obot MCP server discovery and connection."""
+"""FastMCP server with tools for Boeing MCP server discovery and connection."""
 
 import asyncio
 import re
@@ -18,11 +18,11 @@ from mcp import types as mcp_types
 from mcp.shared.message import ServerMessageMetadata
 from pydantic import Field, create_model
 
-from .client import ObotClient
+from .client import BoeingClient
 from .config import config
 
 # Create the FastMCP server
-mcp = FastMCP("obot-mcp-server")
+mcp = FastMCP("boeing-mcp-server")
 
 # This server exposes only tools. Remove prompt/resource handlers so the
 # initialize response does not advertise unsupported capabilities.
@@ -36,7 +36,7 @@ for request_type in (
     mcp._mcp_server.request_handlers.pop(request_type, None)
 
 # Create a shared client instance
-obot_client = ObotClient()
+boeing_client = BoeingClient()
 
 
 def _extract_server_info(item: Dict[str, Any], item_type: str) -> Dict[str, Any]:
@@ -85,8 +85,8 @@ def _extract_server_info(item: Dict[str, Any], item_type: str) -> Dict[str, Any]
 
 
 def _build_connect_url(server_id: str) -> str:
-    """Build the standard Obot MCP connect URL for a server identifier."""
-    return f"{config.obot_server_url}/mcp-connect/{server_id}" if server_id else ""
+    """Build the standard Boeing MCP connect URL for a server identifier."""
+    return f"{config.boeing_server_url}/mcp-connect/{server_id}" if server_id else ""
 
 
 def _normalize_user_server(
@@ -250,7 +250,7 @@ async def list_mcp_servers_impl(
 
     # Fetch catalog entries
     if include_entries:
-        raw_entries = await obot_client.get_catalog_entries(limit=limit)
+        raw_entries = await boeing_client.get_catalog_entries(limit=limit)
         filtered_entries = _filter_by_runtime(raw_entries, runtime_filter)
         catalog_entries = [
             _extract_server_info(entry, "catalog_entry")
@@ -259,7 +259,7 @@ async def list_mcp_servers_impl(
 
     # Fetch multi-user servers
     if include_servers:
-        raw_servers = await obot_client.get_multi_user_servers(limit=limit)
+        raw_servers = await boeing_client.get_multi_user_servers(limit=limit)
         filtered_servers = _filter_by_runtime(raw_servers, runtime_filter)
         multi_user_servers = [
             _extract_server_info(server, "multi_user_server")
@@ -274,14 +274,14 @@ async def list_mcp_servers_impl(
 
 
 @mcp.tool()
-async def obot_list_mcp_servers(
+async def boeing_list_mcp_servers(
     include_entries: bool = True,
     include_servers: bool = True,
     runtime_filter: Optional[str] = None,
     limit: int = 50,
 ) -> Dict[str, Any]:
     """
-    List all available MCP servers in Obot.
+    List all available MCP servers in Boeing.
 
     Args:
         include_entries: Include catalog entries (single-user server templates)
@@ -314,10 +314,10 @@ async def list_connected_mcp_servers_impl() -> Dict[str, Any]:
         raw_user_servers,
         raw_user_server_instances,
     ) = await asyncio.gather(
-        obot_client.get_catalog_entries(limit=1000),
-        obot_client.get_multi_user_servers(limit=1000),
-        obot_client.list_user_mcp_servers(),
-        obot_client.list_user_mcp_server_instances(),
+        boeing_client.get_catalog_entries(limit=1000),
+        boeing_client.get_multi_user_servers(limit=1000),
+        boeing_client.list_user_mcp_servers(),
+        boeing_client.list_user_mcp_server_instances(),
     )
 
     catalog_entries_by_id = {entry.get("id", ""): entry for entry in raw_entries}
@@ -349,7 +349,7 @@ async def list_connected_mcp_servers_impl() -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def obot_list_connected_mcp_servers() -> Dict[str, Any]:
+async def boeing_list_connected_mcp_servers() -> Dict[str, Any]:
     """
     List connected/configured MCP servers for the current user.
 
@@ -379,8 +379,8 @@ async def search_mcp_servers_impl(
         - query: The search query used
     """
     # Fetch all items (we need to search them)
-    raw_entries = await obot_client.get_catalog_entries(limit=1000)
-    raw_servers = await obot_client.get_multi_user_servers(limit=1000)
+    raw_entries = await boeing_client.get_catalog_entries(limit=1000)
+    raw_servers = await boeing_client.get_multi_user_servers(limit=1000)
 
     # Search in catalog entries
     matching_entries = _search_items(raw_entries, query)
@@ -407,7 +407,7 @@ async def search_mcp_servers_impl(
 
 
 @mcp.tool()
-async def obot_search_mcp_servers(
+async def boeing_search_mcp_servers(
     query: str, runtime_filter: Optional[str] = None, limit: int = 20
 ) -> Dict[str, Any]:
     """
@@ -602,7 +602,7 @@ async def _find_existing_user_server(
     Returns:
         The user server dictionary if found, None otherwise
     """
-    servers = await obot_client.list_user_mcp_servers()
+    servers = await boeing_client.list_user_mcp_servers()
     for server in servers:
         if server.get("catalogEntryID") == entry_id:
             return server
@@ -705,9 +705,9 @@ async def _handle_configuration_form_elicitation(
         message=message,
         requestedSchema=elicit_config.schema,
     )
-    meta: Dict[str, Any] = {"ai.nanobot.meta/server-name": name}
+    meta: Dict[str, Any] = {"ai.boeingbot.meta/server-name": name}
     if server_icon:
-        meta["ai.nanobot.meta/server-icon"] = server_icon
+        meta["ai.boeingbot.meta/server-icon"] = server_icon
     params.meta = mcp_types.RequestParams.Meta(**meta)
 
     result = await ctx.session.send_request(
@@ -738,7 +738,7 @@ async def _handle_oauth_elicitation(
     Uses MCP URL mode elicitation to direct the user to the OAuth
     authorization URL in their browser. After the user accepts,
     polls the oauth-url endpoint until it returns empty (meaning
-    the token has been stored by Obot).
+    the token has been stored by Boeing).
 
     Args:
         ctx: FastMCP context
@@ -755,9 +755,9 @@ async def _handle_oauth_elicitation(
     )
 
     # Build the URL mode elicitation params with _meta containing the OAuth URL.
-    # Nanobot's ElicitRequest struct only preserves message, requestedSchema, and _meta
+    # Boeingbot's ElicitRequest struct only preserves message, requestedSchema, and _meta
     # when forwarding elicitations to the UI — the standard MCP "mode" and "url" fields
-    # are dropped. Including the URL in _meta with the "ai.nanobot.meta/oauth-url" key
+    # are dropped. Including the URL in _meta with the "ai.boeingbot.meta/oauth-url" key
     # ensures the UI can detect and display the OAuth URL correctly.
     params = mcp_types.ElicitRequestURLParams(
         message=message,
@@ -765,11 +765,11 @@ async def _handle_oauth_elicitation(
         elicitationId=str(uuid.uuid4()),
     )
     meta: Dict[str, Any] = {
-        "ai.nanobot.meta/oauth-url": oauth_url,
-        "ai.nanobot.meta/server-name": name,
+        "ai.boeingbot.meta/oauth-url": oauth_url,
+        "ai.boeingbot.meta/server-name": name,
     }
     if server_icon:
-        meta["ai.nanobot.meta/server-icon"] = server_icon
+        meta["ai.boeingbot.meta/server-icon"] = server_icon
     params.meta = mcp_types.RequestParams.Meta(**meta)
 
     result = await ctx.session.send_request(
@@ -782,14 +782,14 @@ async def _handle_oauth_elicitation(
     if result.action != "accept":
         return False
 
-    # Poll until Obot has stored the OAuth token.
+    # Poll until Boeing has stored the OAuth token.
     # The oauth-url endpoint returns a URL when auth is still needed,
     # and empty/None when the token has been stored.
     max_attempts = 60
     poll_interval = 2  # seconds
     for _ in range(max_attempts):
         try:
-            url = await obot_client.get_mcp_server_oauth_url(server_id)
+            url = await boeing_client.get_mcp_server_oauth_url(server_id)
             if not url:
                 return True
         except Exception:
@@ -802,7 +802,7 @@ async def _handle_oauth_elicitation(
 
 
 @mcp.tool()
-async def obot_connect_to_mcp_server(
+async def boeing_connect_to_mcp_server(
     server_id: str,
     ctx: Context,
 ) -> Dict[str, Any]:
@@ -827,7 +827,7 @@ async def obot_connect_to_mcp_server(
     """
     # --- Try catalog entry first ---
     try:
-        catalog_entry = await obot_client.get_catalog_entry(server_id)
+        catalog_entry = await boeing_client.get_catalog_entry(server_id)
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
         return {"status": "error", "message": f"Failed to fetch catalog entry: {e}"}
 
@@ -836,7 +836,7 @@ async def obot_connect_to_mcp_server(
 
     # --- Fall back to multi-user server ---
     try:
-        multi_user_server = await obot_client.get_multi_user_server(server_id)
+        multi_user_server = await boeing_client.get_multi_user_server(server_id)
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
         return {"status": "error", "message": f"Failed to fetch server: {e}"}
 
@@ -867,7 +867,7 @@ async def _handle_multi_user_server_connection(
     # Check if the user has already connected to the server
     existing_instance: Optional[Dict[str, Any]] = None
     try:
-        server_instances = await obot_client.list_user_mcp_server_instances()
+        server_instances = await boeing_client.list_user_mcp_server_instances()
         for instance in server_instances:
             if instance.get("mcpServerID") == server_id:
                 existing_instance = instance
@@ -882,7 +882,7 @@ async def _handle_multi_user_server_connection(
         if existing_instance:
             instance_id = existing_instance.get("id", "")
         else:
-            created = await obot_client.connect_to_multi_user_mcp_server(server_id)
+            created = await boeing_client.connect_to_multi_user_mcp_server(server_id)
             instance_id = created.get("id", "")
     except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
         return {"status": "error", "message": f"Failed to connect to server: {e}"}
@@ -918,7 +918,7 @@ async def _handle_multi_user_server_connection(
         }
 
         try:
-            await obot_client.configure_mcp_server_instance(instance_id, config_dict)
+            await boeing_client.configure_mcp_server_instance(instance_id, config_dict)
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {
                 "status": "error",
@@ -926,7 +926,7 @@ async def _handle_multi_user_server_connection(
             }
 
         try:
-            oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+            oauth_url = await boeing_client.get_mcp_server_oauth_url(server_id)
             if oauth_url:
                 oauth_success = await _handle_oauth_elicitation(
                     ctx,
@@ -951,7 +951,7 @@ async def _handle_multi_user_server_connection(
         }
 
     try:
-        oauth_url = await obot_client.get_mcp_server_oauth_url(server_id)
+        oauth_url = await boeing_client.get_mcp_server_oauth_url(server_id)
         if oauth_url:
             oauth_success = await _handle_oauth_elicitation(
                 ctx,
@@ -988,7 +988,7 @@ async def _handle_catalog_entry_connection(
         return {
             "status": "error",
             "message": "Composite servers cannot be configured through this tool. "
-            "Please use the Obot web UI instead.",
+            "Please use the Boeing web UI instead.",
         }
 
     # 2. Check OAuth admin requirement
@@ -1015,7 +1015,7 @@ async def _handle_catalog_entry_connection(
 
         # Check for OAuth requirement even for already configured servers
         try:
-            oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
+            oauth_url = await boeing_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
                 oauth_success = await _handle_oauth_elicitation(
                     ctx,
@@ -1038,7 +1038,7 @@ async def _handle_catalog_entry_connection(
         return {
             "status": "already_configured",
             "server_id": user_server_id,
-            "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
+            "connect_url": f"{config.boeing_server_url}/mcp-connect/{user_server_id}",
             "message": f"Server '{name}' is already configured and ready to connect.",
         }
 
@@ -1057,12 +1057,12 @@ async def _handle_catalog_entry_connection(
             if existing_server:
                 user_server_id = existing_server.get("id", "")
             else:
-                created = await obot_client.create_user_mcp_server(entry_id)
+                created = await boeing_client.create_user_mcp_server(entry_id)
                 user_server_id = created.get("id", "")
 
             # Launch validation
             try:
-                launch_result = await obot_client.launch_user_mcp_server(user_server_id)
+                launch_result = await boeing_client.launch_user_mcp_server(user_server_id)
                 if not launch_result.get("success"):
                     return {
                         "status": "error",
@@ -1072,7 +1072,7 @@ async def _handle_catalog_entry_connection(
                 pass  # Launch endpoint may not exist yet
 
             # Check for OAuth requirement
-            oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
+            oauth_url = await boeing_client.get_mcp_server_oauth_url(user_server_id)
             if oauth_url:
                 oauth_success = await _handle_oauth_elicitation(
                     ctx,
@@ -1090,7 +1090,7 @@ async def _handle_catalog_entry_connection(
             return {
                 "status": "configured",
                 "server_id": user_server_id,
-                "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
+                "connect_url": f"{config.boeing_server_url}/mcp-connect/{user_server_id}",
                 "message": f"Server '{name}' created and ready to connect.",
             }
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
@@ -1152,7 +1152,7 @@ async def _handle_catalog_entry_connection(
         if existing_server:
             user_server_id = existing_server.get("id", "")
         else:
-            created = await obot_client.create_user_mcp_server(
+            created = await boeing_client.create_user_mcp_server(
                 entry_id, url=url_value if needs_url else None
             )
             user_server_id = created.get("id", "")
@@ -1162,7 +1162,7 @@ async def _handle_catalog_entry_connection(
     # 11. Configure server with collected values
     if config_dict:
         try:
-            await obot_client.configure_user_mcp_server(user_server_id, config_dict)
+            await boeing_client.configure_user_mcp_server(user_server_id, config_dict)
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {
                 "status": "error",
@@ -1170,7 +1170,7 @@ async def _handle_catalog_entry_connection(
             }
 
     # Check and handle OAuth requirement
-    oauth_url = await obot_client.get_mcp_server_oauth_url(user_server_id)
+    oauth_url = await boeing_client.get_mcp_server_oauth_url(user_server_id)
     if oauth_url:
         oauth_success = await _handle_oauth_elicitation(
             ctx,
@@ -1187,7 +1187,7 @@ async def _handle_catalog_entry_connection(
 
     # 12. Launch validation
     try:
-        launch_result = await obot_client.launch_user_mcp_server(user_server_id)
+        launch_result = await boeing_client.launch_user_mcp_server(user_server_id)
         if not launch_result.get("success"):
             return {
                 "status": "error",
@@ -1199,7 +1199,7 @@ async def _handle_catalog_entry_connection(
     # 13. Update URL if needed for existing server
     if url_value and existing_server:
         try:
-            await obot_client.update_user_mcp_server_url(user_server_id, url_value)
+            await boeing_client.update_user_mcp_server_url(user_server_id, url_value)
         except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
             return {
                 "status": "error",
@@ -1210,6 +1210,6 @@ async def _handle_catalog_entry_connection(
     return {
         "status": "configured",
         "server_id": user_server_id,
-        "connect_url": f"{config.obot_server_url}/mcp-connect/{user_server_id}",
+        "connect_url": f"{config.boeing_server_url}/mcp-connect/{user_server_id}",
         "message": f"Server '{name}' has been configured and is ready to connect.",
     }

@@ -1,4 +1,4 @@
-"""Async HTTP client for Obot API."""
+"""Async HTTP client for Boeing API."""
 
 import logging
 from typing import Any, Dict, List, Optional
@@ -11,17 +11,17 @@ from .config import config
 logger = logging.getLogger(__name__)
 
 
-class ObotClient:
-    """Async client for interacting with Obot API."""
+class BoeingClient:
+    """Async client for interacting with Boeing API."""
 
     def __init__(self, base_url: Optional[str] = None):
         """
-        Initialize the Obot API client.
+        Initialize the Boeing API client.
 
         Args:
-            base_url: Obot server base URL (defaults to config.obot_server_url)
+            base_url: Boeing server base URL (defaults to config.boeing_server_url)
         """
-        self.base_url = base_url or config.obot_server_url
+        self.base_url = base_url or config.boeing_server_url
         self._client: Optional[httpx.AsyncClient] = None
 
     def _get_auth_headers(self) -> Dict[str, str]:

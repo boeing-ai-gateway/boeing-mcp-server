@@ -757,7 +757,7 @@ wheels = [
 ]
 
 [[package]]
-name = "obot-mcp-poc"
+name = "boeing-mcp-poc"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
